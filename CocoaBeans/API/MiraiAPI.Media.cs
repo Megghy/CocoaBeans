@@ -1,15 +1,16 @@
 ﻿// Copyright (c) Maila. All rights reserved.
 // Licensed under the GNU AGPLv3
 
+using Maila.Cocoa.Beans.Exceptions;
+using Maila.Cocoa.Beans.Models.Messages;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats;
 using System;
 using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Text.Json;
 using System.Threading.Tasks;
-using Maila.Cocoa.Beans.Exceptions;
-using Maila.Cocoa.Beans.Models.Messages;
-using SixLabors.ImageSharp;
 
 namespace Maila.Cocoa.Beans.API
 {
@@ -29,18 +30,19 @@ namespace Maila.Cocoa.Beans.API
             StringContent _type = new(type.ToString().ToLower());
             _type.Headers.ContentDisposition = new("form-data") { Name = "type" };
             content.Add(_type);
-
-            using Image img = Image.Load(imgStream);
-            await using MemoryStream ms = new();
+            imgStream.Position = 0L;
+            using Image img = Image.Load(imgStream, out IImageFormat format);
+            using MemoryStream ms = new();
             img.SaveAsPng(ms);
             ms.Seek(0, SeekOrigin.Begin);
-            StreamContent _img = new(ms);
+            using StreamContent _img = new(ms);
+            string formatString = format.Name.ToLower().Replace("jpeg", "jpg");
             _img.Headers.ContentDisposition = new("form-data")
             {
                 Name = "img",
-                FileName = $"{Guid.NewGuid():n}.png"
+                FileName = $"{Guid.NewGuid():n}.{formatString}"
             };
-            _img.Headers.ContentType = new("image/png");
+            _img.Headers.ContentType = new($"image/{formatString}");
             content.Add(_img);
 
             using HttpClient client = new();
@@ -49,7 +51,7 @@ namespace Maila.Cocoa.Beans.API
             JsonElement res;
             if (!respMsg.IsSuccessStatusCode)
             {
-                throw new WebException(respMsg.StatusCode.ToString());
+                throw new WebException(respMsg.ReasonPhrase);
             }
 
             res = JsonDocument.Parse(await respMsg.Content.ReadAsStringAsync()).RootElement;
